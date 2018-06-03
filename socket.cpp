@@ -1,4 +1,13 @@
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <cstring>
+
 #include "socket.hpp"
+
+#define SOCKET_CHANK_SIZE 2048
 
 int closeSocket(int socketId)
 {
@@ -39,47 +48,48 @@ int connectSocket(int fd, __CONST_SOCKADDR_ARG addr, socklen_t len)
 
 Socket::Socket()
 {
-
+	socketId = shared_ptr<int>(new int); *socketId = -1;
+	active = shared_ptr<bool>(new bool); *active = false;
 }
 
 Socket::Socket(int socketId)
 {
-	this->socketId = socketId;
-	active = isOpen();
+	this->socketId = shared_ptr<int>(new int); *this->socketId = socketId;
+	this->active = shared_ptr<bool>(new bool); *this->active = isOpen();
 }
 
 void Socket::open()
 {
 	if (isOpen()) return;
 
-	socketId = socket(AF_INET, SOCK_STREAM, 0);
+	*socketId = socket(AF_INET, SOCK_STREAM, 0);
 }
 
 void Socket::close()
 {
 	if (!isOpen()) return;
 
-	closeSocket(socketId);
-	socketId = -1;
+	closeSocket(*socketId);
+	*socketId = -1;
 
-	active = false;
+	*active = false;
 }
 
 bool Socket::isOpen()
 {
-	return socketId >= 0;
+	return *socketId >= 0;
 }
 
 bool Socket::isActive()
 {
-	return active;
+	return *active;
 }
 
 bool Socket::bind(int port)
 {
 	if (!isOpen() || isActive()) return false;
 
-	fcntl(socketId, F_SETFL, O_NONBLOCK);
+	fcntl(*socketId, F_SETFL, O_NONBLOCK);
 
 	struct sockaddr_in serverData;
 	bzero((char*) &serverData, sizeof(serverData));
@@ -88,12 +98,13 @@ bool Socket::bind(int port)
 	serverData.sin_addr.s_addr = INADDR_ANY;
 	serverData.sin_port = htons(port);
 
+
 	// Разрешить повторное использование сокета
 	int yes = 1;
-	setsockopt(socketId, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int));
+	setsockopt(*socketId, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int));
 
 	// Связывание сокета с портом
-	active = bindSocket(socketId, (struct sockaddr*)&serverData, sizeof(serverData)) >= 0;
+	*active = bindSocket(*socketId, (struct sockaddr*)&serverData, sizeof(serverData)) >= 0;
 
 	return isActive();
 }
@@ -108,10 +119,10 @@ bool Socket::connect(const char* host, int port)
 	serverData.sin_family = AF_INET;
 	serverData.sin_port = htons(port);
 
-	active = inet_pton(AF_INET, host, &serverData.sin_addr) >= 0;
-	if (!active) return isActive();
+	*active = inet_pton(AF_INET, host, &serverData.sin_addr) >= 0;
+	if (!(*active)) return isActive();
 
-	active = connectSocket(socketId, (struct sockaddr*)&serverData, sizeof(serverData)) >= 0;
+	*active = connectSocket(*socketId, (struct sockaddr*)&serverData, sizeof(serverData)) >= 0;
 
 	return isActive();
 }
@@ -120,14 +131,14 @@ void Socket::listen(int count)
 {
 	if (!isActive()) return;
 
-	listenSocket(socketId, count);
+	listenSocket(*socketId, count);
 }
 
 Socket Socket::accept()
 {
 	if (!isActive()) return Socket();
 
-	Socket result = Socket(acceptSocket(socketId, NULL, NULL));
+	Socket result = Socket(acceptSocket(*socketId, NULL, NULL));
 	return result;
 }
 
@@ -135,7 +146,29 @@ int Socket::send(void* buffer, unsigned int count)
 {
 	if (!isActive()) return 0;
 
-	return sendSocket(socketId, buffer, count, MSG_NOSIGNAL);
+	unsigned int sending = 0;
+
+	while (sending < count)
+	{
+		int result = sendSocket(*socketId, buffer, min(count - sending, (unsigned int)SOCKET_CHANK_SIZE), MSG_NOSIGNAL);
+
+		if (result == 0)
+		{
+			// Клиент отключился
+			return sending;
+		}
+		else if (result < 0)
+		{
+			if (errno == EINTR) continue;
+			// Ошибка при чтении
+			return sending;
+		}
+
+		sending += result;
+		buffer = (char*)buffer + result;
+	}
+
+	return sending;
 }
 
 unsigned int Socket::recv(void* buffer, unsigned int count)
@@ -146,14 +179,22 @@ unsigned int Socket::recv(void* buffer, unsigned int count)
 
 	while (reading < count)
 	{
-		int result;
+		int result = recvSocket(*socketId, buffer, min(count - reading, (unsigned int)SOCKET_CHANK_SIZE), 0);
 
-		if ((result = recvSocket(socketId, (char*)buffer + reading, count - reading, 0)) <= 0)
+		if (result == 0)
 		{
+			// Клиент отключился
+			return reading;
+		}
+		else if (result < 0)
+		{
+			if (errno == EINTR) continue;
+			// Ошибка при чтении
 			return reading;
 		}
 
 		reading += result;
+		buffer = (char*)buffer + result;
 	}
 
 	return reading;
