@@ -1,21 +1,14 @@
 #pragma once
 
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
-#include <fcntl.h>
-#include <unistd.h>
-#include <cstring>
-
-#include <iostream>
+#include <memory>
 
 using namespace std;
 
 class Socket
 {
 private:
-	int socketId = -1;
-	bool active = false;
+	shared_ptr<int> socketId;
+	shared_ptr<bool> active;
 
 public:
 	Socket();
