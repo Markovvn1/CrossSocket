@@ -1,11 +1,11 @@
+#include "socket.hpp"
+
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <fcntl.h>
 #include <unistd.h>
 #include <cstring>
-
-#include "socket.hpp"
 
 #define SOCKET_CHANK_SIZE 2048
 
@@ -45,51 +45,64 @@ int connectSocket(int fd, __CONST_SOCKADDR_ARG addr, socklen_t len)
 }
 
 
+SocketData::SocketData()
+{
+	socketId = -1;
+	active = false;
+}
+
 
 Socket::Socket()
 {
-	socketId = shared_ptr<int>(new int); *socketId = -1;
-	active = shared_ptr<bool>(new bool); *active = false;
+	data = shared_ptr<SocketData>(new SocketData);
 }
 
 Socket::Socket(int socketId)
 {
-	this->socketId = shared_ptr<int>(new int); *this->socketId = socketId;
-	this->active = shared_ptr<bool>(new bool); *this->active = isOpen();
+	data = shared_ptr<SocketData>(new SocketData);
+	data->socketId = socketId;
+	data->active = isOpen();
 }
 
 void Socket::open()
 {
 	if (isOpen()) return;
 
-	*socketId = socket(AF_INET, SOCK_STREAM, 0);
+	data->lock.lock();
+	data->socketId = socket(AF_INET, SOCK_STREAM, 0);
+	data->lock.unlock();
 }
 
 void Socket::close()
 {
 	if (!isOpen()) return;
+	closeSocket(data->socketId);
 
-	closeSocket(*socketId);
-	*socketId = -1;
+	data->lock.lock();
 
-	*active = false;
+	data->socketId = -1;
+	data->active = false;
+
+	data->lock.unlock();
 }
 
 bool Socket::isOpen()
 {
-	return *socketId >= 0;
+	return data->socketId >= 0;
 }
 
 bool Socket::isActive()
 {
-	return *active;
+	return data->active;
 }
 
 bool Socket::bind(int port)
 {
 	if (!isOpen() || isActive()) return false;
 
-	fcntl(*socketId, F_SETFL, O_NONBLOCK);
+	data->lock.lock();
+
+	fcntl(data->socketId, F_SETFL, O_NONBLOCK);
 
 	struct sockaddr_in serverData;
 	bzero((char*) &serverData, sizeof(serverData));
@@ -101,10 +114,12 @@ bool Socket::bind(int port)
 
 	// Разрешить повторное использование сокета
 	int yes = 1;
-	setsockopt(*socketId, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int));
+	setsockopt(data->socketId, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int));
 
 	// Связывание сокета с портом
-	*active = bindSocket(*socketId, (struct sockaddr*)&serverData, sizeof(serverData)) >= 0;
+	data->active = bindSocket(data->socketId, (struct sockaddr*)&serverData, sizeof(serverData)) >= 0;
+
+	data->lock.unlock();
 
 	return isActive();
 }
@@ -113,16 +128,24 @@ bool Socket::connect(const char* host, int port)
 {
 	if (!isOpen() || isActive()) return false;
 
+	data->lock.lock();
+
 	struct sockaddr_in serverData;
 	bzero((char*) &serverData, sizeof(serverData));
 
 	serverData.sin_family = AF_INET;
 	serverData.sin_port = htons(port);
 
-	*active = inet_pton(AF_INET, host, &serverData.sin_addr) >= 0;
-	if (!(*active)) return isActive();
+	data->active = inet_pton(AF_INET, host, &serverData.sin_addr) >= 0;
+	if (!data->active)
+	{
+		data->lock.unlock();
+		return isActive();
+	}
 
-	*active = connectSocket(*socketId, (struct sockaddr*)&serverData, sizeof(serverData)) >= 0;
+	data->active = connectSocket(data->socketId, (struct sockaddr*)&serverData, sizeof(serverData)) >= 0;
+
+	data->lock.unlock();
 
 	return isActive();
 }
@@ -131,72 +154,96 @@ void Socket::listen(int count)
 {
 	if (!isActive()) return;
 
-	listenSocket(*socketId, count);
+	data->lock.lock();
+	listenSocket(data->socketId, count);
+	data->lock.unlock();
 }
 
 Socket Socket::accept()
 {
 	if (!isActive()) return Socket();
 
-	Socket result = Socket(acceptSocket(*socketId, NULL, NULL));
-	return result;
+	data->lock.lock();
+	int newSocketId = acceptSocket(data->socketId, NULL, NULL);
+	data->lock.unlock();
+
+	if (newSocketId > 0)
+		fcntl(newSocketId, F_SETFL, O_NONBLOCK);
+
+	return Socket(newSocketId);
 }
 
-int Socket::send(void* buffer, unsigned int count)
+bool Socket::send(void* buffer, unsigned int count)
 {
 	if (!isActive()) return 0;
 
 	unsigned int sending = 0;
 
+	data->lock.lock();
+
 	while (sending < count)
 	{
-		int result = sendSocket(*socketId, buffer, min(count - sending, (unsigned int)SOCKET_CHANK_SIZE), MSG_NOSIGNAL);
+		int result = sendSocket(data->socketId, buffer, min(count - sending, (unsigned int)SOCKET_CHANK_SIZE), MSG_NOSIGNAL);
 
 		if (result == 0)
 		{
 			// Клиент отключился
-			return sending;
+			data->lock.unlock();
+			close();
+			return false;
 		}
 		else if (result < 0)
 		{
-			if (errno == EINTR) continue;
+			if (errno == EINTR || errno == EWOULDBLOCK) continue;
 			// Ошибка при чтении
-			return sending;
+			data->lock.unlock();
+			close();
+			return false;
 		}
 
 		sending += result;
 		buffer = (char*)buffer + result;
 	}
 
-	return sending;
+	data->lock.unlock();
+
+	return true;
 }
 
-unsigned int Socket::recv(void* buffer, unsigned int count)
+bool Socket::recv(void* buffer, unsigned int count)
 {
 	if (!isActive()) return 0;
 
 	unsigned int reading = 0;
 
+	data->lock.lock();
+
 	while (reading < count)
 	{
-		int result = recvSocket(*socketId, buffer, min(count - reading, (unsigned int)SOCKET_CHANK_SIZE), 0);
+		int result = recvSocket(data->socketId, buffer, min(count - reading, (unsigned int)SOCKET_CHANK_SIZE), 0);
 
 		if (result == 0)
 		{
 			// Клиент отключился
-			return reading;
+			data->lock.unlock();
+			close();
+			return false;
 		}
 		else if (result < 0)
 		{
-			if (errno == EINTR) continue;
+			if (errno == EINTR || errno == EWOULDBLOCK) continue;
 			// Ошибка при чтении
-			return reading;
+			data->lock.unlock();
+			close();
+			return false;
 		}
 
 		reading += result;
 		buffer = (char*)buffer + result;
 	}
 
-	return reading;
+	data->lock.unlock();
+
+	return true;
 }
 
