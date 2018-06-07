@@ -1,14 +1,23 @@
 #pragma once
 
 #include <memory>
+#include <mutex>
 
 using namespace std;
+
+struct SocketData
+{
+	int socketId;
+	bool active;
+	mutex lock;
+
+	SocketData();
+};
 
 class Socket
 {
 private:
-	shared_ptr<int> socketId;
-	shared_ptr<bool> active;
+	shared_ptr<SocketData> data;
 
 public:
 	Socket();
@@ -25,6 +34,7 @@ public:
 	void listen(int count);
 	Socket accept();
 
-	int send(void* buffer, unsigned int count);
-	unsigned int recv(void* bufer, unsigned int count);
+	// true - все хорошо
+	bool send(void* buffer, unsigned int count);
+	bool recv(void* bufer, unsigned int count);
 };
