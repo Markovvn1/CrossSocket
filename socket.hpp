@@ -21,8 +21,8 @@ public:
 	Socket();
 	Socket(int socketId);
 
-	void open();
-	void close();
+	bool open();
+	bool close();
 	bool isOpen();
 	bool isActive();
 
