@@ -58,18 +58,20 @@ Socket::Socket(int socketId)
 	data->active = isOpen();
 }
 
-void Socket::open()
+bool Socket::open()
 {
-	if (isOpen()) return;
+	if (isOpen()) return true;
 
 	data->lock.lock();
 	data->socketId = socket(AF_INET, SOCK_STREAM, 0);
 	data->lock.unlock();
+
+	return isOpen();
 }
 
-void Socket::close()
+bool Socket::close()
 {
-	if (!isOpen()) return;
+	if (!isOpen()) return true;
 	closeSocket(data->socketId);
 
 	data->lock.lock();
@@ -78,6 +80,8 @@ void Socket::close()
 	data->active = false;
 
 	data->lock.unlock();
+
+	return true;
 }
 
 bool Socket::isOpen()
