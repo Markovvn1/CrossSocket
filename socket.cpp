@@ -9,47 +9,41 @@
 
 #define SOCKET_CHANK_SIZE 2048
 
-int closeSocket(int socketId)
+inline int closeSocket(int socketId)
 {
 	return close(socketId);
 }
 
-int bindSocket(int socketId, __CONST_SOCKADDR_ARG addr, socklen_t len)
+inline int bindSocket(int socketId, __CONST_SOCKADDR_ARG addr, socklen_t len)
 {
 	return bind(socketId, addr, len);
 }
 
-int listenSocket(int fd, int n)
+inline int listenSocket(int fd, int n)
 {
 	return listen(fd, n);
 }
 
-int acceptSocket(int fd, __SOCKADDR_ARG addr, socklen_t *__restrict addr_len)
+inline int acceptSocket(int fd, __SOCKADDR_ARG addr, socklen_t *__restrict addr_len)
 {
 	return accept(fd, addr, addr_len);
 }
 
-ssize_t sendSocket(int fd, const void *buf, size_t n, int flags)
+inline ssize_t sendSocket(int fd, const void *buf, size_t n, int flags)
 {
 	return send(fd, buf, n, flags);
 }
 
-ssize_t recvSocket(int fd, void *buf, size_t n, int flags)
+inline ssize_t recvSocket(int fd, void *buf, size_t n, int flags)
 {
 	return recv(fd, buf, n, flags);
 }
 
-int connectSocket(int fd, __CONST_SOCKADDR_ARG addr, socklen_t len)
+inline int connectSocket(int fd, __CONST_SOCKADDR_ARG addr, socklen_t len)
 {
 	return connect(fd, addr, len);
 }
 
-
-SocketData::SocketData()
-{
-	socketId = -1;
-	active = false;
-}
 
 
 Socket::Socket()
