@@ -7,11 +7,9 @@ using namespace std;
 
 struct SocketData
 {
-	int socketId;
-	bool active;
+	int socketId = -1;
+	bool active = false;
 	mutex lock;
-
-	SocketData();
 };
 
 class Socket
