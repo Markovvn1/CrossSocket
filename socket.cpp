@@ -6,8 +6,11 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <cstring>
+#include <mutex>
 
 #define SOCKET_CHANK_SIZE 2048
+
+using namespace std;
 
 struct SocketData
 {
