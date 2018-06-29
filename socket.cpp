@@ -9,6 +9,13 @@
 
 #define SOCKET_CHANK_SIZE 2048
 
+struct SocketData
+{
+	int socketId = -1;
+	bool active = false;
+	mutex lock;
+};
+
 inline int closeSocket(int socketId)
 {
 	return close(socketId);
