@@ -1,16 +1,13 @@
 #pragma once
 
 #include <memory>
-#include <mutex>
-
-using namespace std;
 
 struct SocketData;
 
 class Socket
 {
 private:
-	shared_ptr<SocketData> data;
+	std::shared_ptr<SocketData> data;
 
 public:
 	Socket();
