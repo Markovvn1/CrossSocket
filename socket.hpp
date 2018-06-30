@@ -12,6 +12,7 @@ private:
 public:
 	Socket();
 	Socket(int socketId);
+	~Socket();
 
 	bool open();
 	bool close();
