@@ -1,4 +1,4 @@
-#include "socket.hpp"
+#include "../roboGan/socket.hpp"
 
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -66,6 +66,13 @@ Socket::Socket(int socketId)
 	data = shared_ptr<SocketData>(new SocketData);
 	data->socketId = socketId;
 	data->active = isOpen();
+}
+
+Socket::~Socket()
+{
+	if (data.use_count() != 1) return;
+
+	close();
 }
 
 bool Socket::open()
