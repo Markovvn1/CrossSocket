@@ -27,5 +27,5 @@ public:
 
 	// true - все хорошо
 	bool send(void* buffer, unsigned int count);
-	bool recv(void* bufer, unsigned int count);
+	bool recv(void* buffer, unsigned int count);
 };
