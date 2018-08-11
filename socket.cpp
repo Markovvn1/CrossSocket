@@ -1,69 +1,129 @@
-#include "socket.hpp"
+#include "socket.h"
 
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
+#ifdef _WIN32
+	#include <winsock2.h>
+	#include <WS2tcpip.h>
+	#include <stdlib.h>
+#else
+	#include <sys/socket.h>
+	#include <netinet/in.h>
+	#include <arpa/inet.h>
+	#include <unistd.h>
+#endif
+
 #include <fcntl.h>
-#include <unistd.h>
 #include <cstring>
 #include <mutex>
+
+#ifdef _WIN32
+	#pragma comment (lib, "Ws2_32.lib")
+#endif
 
 #define SOCKET_CHANK_SIZE 2048
 
 using namespace std;
 
-struct SocketData
+#ifndef _WIN32
+	typedef unsigned int SOCKET;
+	typedef struct sockaddr_in SOCKADDR_IN;
+	typedef struct sockaddr SOCKADDR;
+
+	#define INVALID_SOCKET  (SOCKET)(~0)
+#endif
+
+struct __Socket
 {
-	int socketId = -1;
-	bool active = false;
+	SOCKET socketId;
+	bool active;
 	mutex lock;
 };
 
-inline int closeSocket(int socketId)
+inline SOCKET openSocket()
 {
-	return close(socketId);
+#ifdef _WIN32
+	WSADATA WSAData;
+	WSAStartup(MAKEWORD(2, 2), &WSAData);
+	SOCKET res = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+
+	if (res < 0)
+	{
+		WSACleanup();
+	}
+
+	return res;
+#else
+	return socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+#endif
 }
 
-inline int bindSocket(int socketId, __CONST_SOCKADDR_ARG addr, socklen_t len)
+inline int closeSocket(SOCKET socketId)
+{
+#ifdef _WIN32
+	shutdown(socketId, SD_SEND);
+	int res = closesocket(socketId);
+	WSACleanup();
+	return res;
+#else
+	return close(socketId);
+#endif
+}
+
+inline int bindSocket(SOCKET socketId, const SOCKADDR* addr, int len)
 {
 	return bind(socketId, addr, len);
 }
 
-inline int listenSocket(int fd, int n)
+inline int listenSocket(SOCKET fd, int n)
 {
 	return listen(fd, n);
 }
 
-inline int acceptSocket(int fd, __SOCKADDR_ARG addr, socklen_t *__restrict addr_len)
+inline int acceptSocket(SOCKET fd, SOCKADDR* addr, int* addr_len)
 {
+#ifdef _WIN32
 	return accept(fd, addr, addr_len);
+#else
+	return accept(fd, addr, (socklen_t*)addr_len);
+#endif
 }
 
-inline ssize_t sendSocket(int fd, const void *buf, size_t n, int flags)
+inline int sendSocket(SOCKET fd, const char *buf, size_t n, int flags)
 {
 	return send(fd, buf, n, flags);
 }
 
-inline ssize_t recvSocket(int fd, void *buf, size_t n, int flags)
+inline int recvSocket(SOCKET fd, char *buf, size_t n, int flags)
 {
 	return recv(fd, buf, n, flags);
 }
 
-inline int connectSocket(int fd, __CONST_SOCKADDR_ARG addr, socklen_t len)
+inline int connectSocket(SOCKET fd, const SOCKADDR* addr, int len)
 {
 	return connect(fd, addr, len);
+}
+
+void setNonBlockSocket(SOCKET socketId)
+{
+#ifdef _WIN32
+	u_long nonblocking_enabled = true;
+	ioctlsocket(socketId, FIONBIO, &nonblocking_enabled);
+#else
+	fcntl(socketId, F_SETFL, O_NONBLOCK);
+#endif
 }
 
 
 
 Socket::Socket()
 {
-	data = shared_ptr<SocketData>(new SocketData);
+	data = shared_ptr<__Socket>(new __Socket);
+	data->socketId = INVALID_SOCKET;
+	data->active = false;
 }
 
-Socket::Socket(int socketId)
+Socket::Socket(unsigned int socketId)
 {
-	data = shared_ptr<SocketData>(new SocketData);
+	data = shared_ptr<__Socket>(new __Socket);
 	data->socketId = socketId;
 	data->active = isOpen();
 }
@@ -80,7 +140,7 @@ bool Socket::open()
 	if (isOpen()) return true;
 
 	data->lock.lock();
-	data->socketId = socket(AF_INET, SOCK_STREAM, 0);
+	data->socketId = openSocket();
 	data->lock.unlock();
 
 	return isOpen();
@@ -89,9 +149,10 @@ bool Socket::open()
 bool Socket::close()
 {
 	if (!isOpen()) return true;
-	closeSocket(data->socketId);
 
 	data->lock.lock();
+
+	closeSocket(data->socketId);
 
 	data->socketId = -1;
 	data->active = false;
@@ -103,7 +164,7 @@ bool Socket::close()
 
 bool Socket::isOpen()
 {
-	return data->socketId >= 0;
+	return data->socketId != INVALID_SOCKET;
 }
 
 bool Socket::isActive()
@@ -117,10 +178,15 @@ bool Socket::bind(int port)
 
 	data->lock.lock();
 
-	fcntl(data->socketId, F_SETFL, O_NONBLOCK);
+	setNonBlockSocket(data->socketId);
 
-	struct sockaddr_in serverData;
-	bzero((char*) &serverData, sizeof(serverData));
+	SOCKADDR_IN serverData;
+
+	#ifdef _WIN32
+		ZeroMemory((char*)&serverData, sizeof(serverData));
+	#else
+		bzero((char*)&serverData, sizeof(serverData));
+	#endif
 
 	serverData.sin_family = AF_INET;
 	serverData.sin_addr.s_addr = INADDR_ANY;
@@ -129,10 +195,10 @@ bool Socket::bind(int port)
 
 	// Разрешить повторное использование сокета
 	int yes = 1;
-	setsockopt(data->socketId, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int));
+	setsockopt(data->socketId, SOL_SOCKET, SO_REUSEADDR, (const char*)&yes, sizeof(int));
 
 	// Связывание сокета с портом
-	data->active = bindSocket(data->socketId, (struct sockaddr*)&serverData, sizeof(serverData)) >= 0;
+	data->active = bindSocket(data->socketId, (SOCKADDR*)&serverData, sizeof(serverData)) >= 0;
 
 	data->lock.unlock();
 
@@ -145,8 +211,13 @@ bool Socket::connect(const char* host, int port)
 
 	data->lock.lock();
 
-	struct sockaddr_in serverData;
-	bzero((char*) &serverData, sizeof(serverData));
+	SOCKADDR_IN serverData;
+
+	#ifdef _WIN32
+		ZeroMemory((char*)&serverData, sizeof(serverData));
+	#else
+		bzero((char*)&serverData, sizeof(serverData));
+	#endif
 
 	serverData.sin_family = AF_INET;
 	serverData.sin_port = htons(port);
@@ -158,7 +229,7 @@ bool Socket::connect(const char* host, int port)
 		return isActive();
 	}
 
-	data->active = connectSocket(data->socketId, (struct sockaddr*)&serverData, sizeof(serverData)) >= 0;
+	data->active = connectSocket(data->socketId, (SOCKADDR*)&serverData, sizeof(serverData)) >= 0;
 
 	data->lock.unlock();
 
@@ -179,16 +250,16 @@ Socket Socket::accept()
 	if (!isActive()) return Socket();
 
 	data->lock.lock();
-	int newSocketId = acceptSocket(data->socketId, NULL, NULL);
+	SOCKET newSocketId = acceptSocket(data->socketId, NULL, NULL);
 	data->lock.unlock();
 
-	if (newSocketId > 0)
-		fcntl(newSocketId, F_SETFL, O_NONBLOCK);
+	if (newSocketId != INVALID_SOCKET)
+		setNonBlockSocket(newSocketId);
 
 	return Socket(newSocketId);
 }
 
-bool Socket::send(void* buffer, unsigned int count)
+bool Socket::send(const char* buffer, unsigned int count)
 {
 	if (!isActive()) return 0;
 
@@ -198,7 +269,7 @@ bool Socket::send(void* buffer, unsigned int count)
 
 	while (sending < count)
 	{
-		int result = sendSocket(data->socketId, buffer, min(count - sending, (unsigned int)SOCKET_CHANK_SIZE), MSG_NOSIGNAL);
+		int result = sendSocket(data->socketId, buffer, min(count - sending, (unsigned int)SOCKET_CHANK_SIZE), 0);
 
 		if (result == 0)
 		{
@@ -209,7 +280,7 @@ bool Socket::send(void* buffer, unsigned int count)
 		}
 		else if (result < 0)
 		{
-			if (errno == EINTR || errno == EWOULDBLOCK) continue;
+			if (errno == EINTR || errno == EWOULDBLOCK || errno == 0) continue;
 			// Ошибка при чтении
 			data->lock.unlock();
 			close();
@@ -217,7 +288,7 @@ bool Socket::send(void* buffer, unsigned int count)
 		}
 
 		sending += result;
-		buffer = (char*)buffer + result;
+		buffer = buffer + result;
 	}
 
 	data->lock.unlock();
@@ -225,7 +296,7 @@ bool Socket::send(void* buffer, unsigned int count)
 	return true;
 }
 
-bool Socket::recv(void* buffer, unsigned int count)
+bool Socket::recv(char* buffer, unsigned int count)
 {
 	if (!isActive()) return 0;
 
@@ -246,7 +317,7 @@ bool Socket::recv(void* buffer, unsigned int count)
 		}
 		else if (result < 0)
 		{
-			if (errno == EINTR || errno == EWOULDBLOCK) continue;
+			if (errno == EINTR || errno == EWOULDBLOCK || errno == 0) continue;
 			// Ошибка при чтении
 			data->lock.unlock();
 			close();
@@ -254,11 +325,10 @@ bool Socket::recv(void* buffer, unsigned int count)
 		}
 
 		reading += result;
-		buffer = (char*)buffer + result;
+		buffer = buffer + result;
 	}
 
 	data->lock.unlock();
 
 	return true;
 }
-
