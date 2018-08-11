@@ -2,17 +2,19 @@
 
 #include <memory>
 
-struct SocketData;
+struct __Socket;
 
 class Socket
 {
 private:
-	std::shared_ptr<SocketData> data;
+	std::shared_ptr<__Socket> data;
 
 public:
 	Socket();
-	Socket(int socketId);
-	~Socket();
+	Socket(unsigned int socketId);
+	virtual ~Socket();
+
+	// true - все хорошо
 
 	bool open();
 	bool close();
@@ -25,7 +27,6 @@ public:
 	void listen(int count);
 	Socket accept();
 
-	// true - все хорошо
-	bool send(void* buffer, unsigned int count);
-	bool recv(void* buffer, unsigned int count);
+	bool send(const char* buffer, unsigned int count);
+	bool recv(char* buffer, unsigned int count);
 };
