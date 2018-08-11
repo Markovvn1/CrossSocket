@@ -1,4 +1,4 @@
-#include "socket.h"
+#include "socket.hpp"
 
 #ifdef _WIN32
 	#include <winsock2.h>
