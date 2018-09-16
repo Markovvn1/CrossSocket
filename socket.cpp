@@ -31,12 +31,6 @@ using namespace std;
 	#define INVALID_SOCKET  (SOCKET)(~0)
 #endif
 
-struct __Socket
-{
-	SOCKET socketId;
-	bool active;
-	mutex lock;
-};
 
 inline SOCKET openSocket()
 {
@@ -112,6 +106,13 @@ void setNonBlockSocket(SOCKET socketId)
 #endif
 }
 
+
+struct __Socket
+{
+	SOCKET socketId;
+	bool active;
+	mutex lock;
+};
 
 
 Socket::Socket()
