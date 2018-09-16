@@ -151,9 +151,9 @@ bool Socket::close()
 {
 	if (!isOpen()) return true;
 
-	data->lock.lock();
-
 	closeSocket(data->socketId);
+	
+	data->lock.lock();
 
 	data->socketId = -1;
 	data->active = false;
