@@ -1,14 +1,14 @@
 #include "socket.hpp"
 
 #ifdef _WIN32
-	#include <winsock2.h>
-	#include <WS2tcpip.h>
-	#include <stdlib.h>
+#include <winsock2.h>
+#include <WS2tcpip.h>
+#include <stdlib.h>
 #else
-	#include <sys/socket.h>
-	#include <netinet/in.h>
-	#include <arpa/inet.h>
-	#include <unistd.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <unistd.h>
 #endif
 
 #include <fcntl.h>
@@ -16,7 +16,7 @@
 #include <mutex>
 
 #ifdef _WIN32
-	#pragma comment (lib, "Ws2_32.lib")
+#pragma comment (lib, "Ws2_32.lib")
 #endif
 
 #define SOCKET_CHANK_SIZE 2048
@@ -24,25 +24,50 @@
 using namespace std;
 
 #ifndef _WIN32
-	typedef unsigned int SOCKET;
-	typedef struct sockaddr_in SOCKADDR_IN;
-	typedef struct sockaddr SOCKADDR;
+typedef unsigned int SOCKET;
+typedef struct sockaddr_in SOCKADDR_IN;
+typedef struct sockaddr SOCKADDR;
 
-	#define INVALID_SOCKET  (SOCKET)(~0)
+#define INVALID_SOCKET  (SOCKET)(~0)
 #endif
 
+#ifdef _WIN32
+
+mutex lock_open_socket;
+int count_socket = 0;
+
+void check_start()
+{
+	lock_open_socket.lock();
+	if (count_socket == 0)
+	{
+		WSADATA WSAData;
+		WSAStartup(MAKEWORD(2, 2), &WSAData);
+	}
+	count_socket++;
+	lock_open_socket.unlock();
+}
+
+void check_close()
+{
+	lock_open_socket.lock();
+	count_socket--;
+	if (count_socket == 0)
+	{
+		WSACleanup();
+	}
+	lock_open_socket.unlock();
+}
+
+#endif
 
 inline SOCKET openSocket()
 {
 #ifdef _WIN32
-	WSADATA WSAData;
-	WSAStartup(MAKEWORD(2, 2), &WSAData);
+	check_start();
 	SOCKET res = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
 
-	if (res < 0)
-	{
-		WSACleanup();
-	}
+	if (res < 0) check_close();
 
 	return res;
 #else
@@ -55,7 +80,7 @@ inline int closeSocket(SOCKET socketId)
 #ifdef _WIN32
 	shutdown(socketId, SD_SEND);
 	int res = closesocket(socketId);
-	WSACleanup();
+	check_close();
 	return res;
 #else
 	return close(socketId);
@@ -152,7 +177,7 @@ bool Socket::close()
 	if (!isOpen()) return true;
 
 	closeSocket(data->socketId);
-	
+
 	data->lock.lock();
 
 	data->socketId = -1;
@@ -183,11 +208,11 @@ bool Socket::bind(int port)
 
 	SOCKADDR_IN serverData;
 
-	#ifdef _WIN32
-		ZeroMemory((char*)&serverData, sizeof(serverData));
-	#else
-		bzero((char*)&serverData, sizeof(serverData));
-	#endif
+#ifdef _WIN32
+	ZeroMemory((char*)&serverData, sizeof(serverData));
+#else
+	bzero((char*)&serverData, sizeof(serverData));
+#endif
 
 	serverData.sin_family = AF_INET;
 	serverData.sin_addr.s_addr = INADDR_ANY;
@@ -214,11 +239,11 @@ bool Socket::connect(const char* host, int port)
 
 	SOCKADDR_IN serverData;
 
-	#ifdef _WIN32
-		ZeroMemory((char*)&serverData, sizeof(serverData));
-	#else
-		bzero((char*)&serverData, sizeof(serverData));
-	#endif
+#ifdef _WIN32
+	ZeroMemory((char*)&serverData, sizeof(serverData));
+#else
+	bzero((char*)&serverData, sizeof(serverData));
+#endif
 
 	serverData.sin_family = AF_INET;
 	serverData.sin_port = htons(port);
