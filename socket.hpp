@@ -2,8 +2,14 @@
 
 #include <memory>
 
+class Socket;
+class ServerSocket;
+class ClientSocket;
+class AcceptedClient;
+
 struct __Socket;
 
+// Класс, реализующий весь основной функционал для работы с сокетами.
 class Socket
 {
 private:
@@ -11,7 +17,6 @@ private:
 
 public:
 	Socket();
-	Socket(unsigned int socketId); // Системный конструктор
 	virtual ~Socket();
 
 	// Вернет true, если все хорошо
@@ -25,21 +30,45 @@ public:
 	bool isActive();
 
 	// Связать socket с портом
-	bool bind(int port);
+	bool bind(uint port);
 
 	// Подключиться к серверу
-	bool connect(const char* host, int port);
+	bool connect(const char* host, uint port);
 
 	// Установить максимальное количество человек в очереди
-	void listen(int count);
+	void listen(uint count);
 
 	// Вернет открытый socket, если соединение с клиентом было установленно
 	// Если клиентов нет, то вернет закрытый socket
-	Socket accept();
+	AcceptedClient accept();
 
 	// Отправить count байт данных, лежащих по адресу buffer
-	bool send(const char* buffer, unsigned int count);
+	bool send(const char* buffer, uint count);
 
 	// Принять count байт данных и положить их по адресу buffer
-	bool recv(char* buffer, unsigned int count);
+	bool recv(char* buffer, uint count);
+};
+
+// Класс, релизующий весь необходимый функционал для создания сервера
+class ServerSocket : public Socket
+{
+	bool connect() = delete;
+	bool send() = delete;
+	bool recv() = delete;
+};
+
+// Класс, релизующий весь необходимый функционал для создания клиента
+class ClientSocket : public Socket
+{
+	bool bind() = delete;
+	bool listen() = delete;
+	AcceptedClient accept() = delete;
+};
+
+class AcceptedClient : public Socket
+{
+	bool bind() = delete;
+	bool connect() = delete;
+	bool listen() = delete;
+	AcceptedClient accept() = delete;
 };

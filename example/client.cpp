@@ -1,21 +1,25 @@
 #include <iostream>
-#include <cstring>
-#include "socket.hpp"
 
-using namespace std;
+#include "../socket.hpp"
 
 int main()
 {
-    Socket socket;
+	// Create client socket and connect to server
+    ClientSocket socket;
     socket.open();
     socket.connect("127.0.0.1", 1111);
 
-    char data1[13];
-    socket.recv(data1, 13);
-    cout << data1 << endl;
+    // Receive some data
+    char dataForReceive[19];
+    socket.recv(dataForReceive, 19);
+    std::cout << dataForReceive << std::endl;
 
-    const char* data2 = "Hello, Vova!";
-    socket.send(data2, strlen(data2) + 1);
+    // Send some data
+    const char* dataToSend = "Hi from client!";
+    socket.send(dataToSend, 15 + 1);
+
+    // Close client (optionally: it closes automatically when object will be destroyed)
+    socket.close();
 
     return 0;
 }

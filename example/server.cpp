@@ -1,39 +1,45 @@
 #include <iostream>
 #include <unistd.h>
-#include <cstring>
 
-#include "socket.hpp"
-
-using namespace std;
-
+#include "../socket.hpp"
 
 int main()
 {
-	Socket socket;
-	socket.open();
-	socket.bind(1111);
-	socket.listen(5);
+	// Create and confinure server
+	ServerSocket server;
+	server.open();
+	server.bind(1111);
+	server.listen(5); // Maximum amount of clients
 
 	while (true)
 	{
-		Socket socket1 = socket.accept();
+		// Check if client can be accepted (non-blocking)
+		AcceptedClient client = server.accept();
 
-		if (!socket1.isActive())
+		// If client was not accepted
+		if (!client.isActive())
 		{
 			usleep(10000);
-			continue;
+			continue; // continue waiting for client
 		}
 
-		const char* data1 = "Valy, Hello!";
-		socket1.send(data1, strlen(data1) + 1);
+		// Send some data
+		const char* dataToSend = "Hello from server!";
+		client.send(dataToSend, 18 + 1);
 
-		char res[13];
-		socket1.recv(res, 13);
+		// Receive some data
+		char dataForReceive[16];
+		client.recv(dataForReceive, 16);
+		std::cout << dataForReceive << std::endl;
 
-		cout << res << endl;
+		// Close connection (optionally: it closes automatically when object will be destroyed)
+		client.close();
 
 		break;
 	}
+
+	// Close server (optionally: it closes automatically when object will be destroyed)
+	server.close();
 
 	return 0;
 }

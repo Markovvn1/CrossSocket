@@ -61,66 +61,6 @@ void check_close()
 
 #endif
 
-inline SOCKET openSocket()
-{
-#ifdef _WIN32
-	check_start();
-	SOCKET res = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-
-	if (res < 0) check_close();
-
-	return res;
-#else
-	return socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-#endif
-}
-
-inline int closeSocket(SOCKET socketId)
-{
-#ifdef _WIN32
-	shutdown(socketId, SD_SEND);
-	int res = closesocket(socketId);
-	check_close();
-	return res;
-#else
-	return close(socketId);
-#endif
-}
-
-inline int bindSocket(SOCKET socketId, const SOCKADDR* addr, int len)
-{
-	return bind(socketId, addr, len);
-}
-
-inline int listenSocket(SOCKET fd, int n)
-{
-	return listen(fd, n);
-}
-
-inline int acceptSocket(SOCKET fd, SOCKADDR* addr, int* addr_len)
-{
-#ifdef _WIN32
-	return accept(fd, addr, addr_len);
-#else
-	return accept(fd, addr, (socklen_t*)addr_len);
-#endif
-}
-
-inline int sendSocket(SOCKET fd, const char *buf, size_t n, int flags)
-{
-	return send(fd, buf, n, flags);
-}
-
-inline int recvSocket(SOCKET fd, char *buf, size_t n, int flags)
-{
-	return recv(fd, buf, n, flags);
-}
-
-inline int connectSocket(SOCKET fd, const SOCKADDR* addr, int len)
-{
-	return connect(fd, addr, len);
-}
-
 void setNonBlockSocket(SOCKET socketId)
 {
 #ifdef _WIN32
@@ -147,13 +87,6 @@ Socket::Socket()
 	data->active = false;
 }
 
-Socket::Socket(unsigned int socketId)
-{
-	data = shared_ptr<__Socket>(new __Socket);
-	data->socketId = socketId;
-	data->active = isOpen();
-}
-
 Socket::~Socket()
 {
 	if (data.use_count() != 1) return;
@@ -166,7 +99,14 @@ bool Socket::open()
 	if (isOpen()) return true;
 
 	data->lock.lock();
-	data->socketId = openSocket();
+#ifdef _WIN32
+		check_start();
+		data->socketId = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+
+		if (data->socketId == INVALID_SOCKET) check_close();
+#else
+		data->socketId = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+#endif
 	data->lock.unlock();
 
 	return isOpen();
@@ -176,7 +116,13 @@ bool Socket::close()
 {
 	if (!isOpen()) return true;
 
-	closeSocket(data->socketId);
+#ifdef _WIN32
+	shutdown(data->socketId, SD_SEND);
+	closesocket(data->socketId);
+	check_close();
+#else
+	::close(data->socketId);
+#endif
 
 	data->lock.lock();
 
@@ -198,7 +144,7 @@ bool Socket::isActive()
 	return data->active;
 }
 
-bool Socket::bind(int port)
+bool Socket::bind(uint port)
 {
 	if (!isOpen() || isActive()) return false;
 
@@ -224,21 +170,20 @@ bool Socket::bind(int port)
 	setsockopt(data->socketId, SOL_SOCKET, SO_REUSEADDR, (const char*)&yes, sizeof(int));
 
 	// Связывание сокета с портом
-	data->active = bindSocket(data->socketId, (SOCKADDR*)&serverData, sizeof(serverData)) >= 0;
+	data->active = ::bind(data->socketId, (SOCKADDR*)&serverData, sizeof(serverData)) >= 0;
 
 	data->lock.unlock();
 
 	return isActive();
 }
 
-bool Socket::connect(const char* host, int port)
+bool Socket::connect(const char* host, uint port)
 {
 	if (!isOpen() || isActive()) return false;
 
 	data->lock.lock();
 
 	SOCKADDR_IN serverData;
-
 #ifdef _WIN32
 	ZeroMemory((char*)&serverData, sizeof(serverData));
 #else
@@ -255,47 +200,51 @@ bool Socket::connect(const char* host, int port)
 		return isActive();
 	}
 
-	data->active = connectSocket(data->socketId, (SOCKADDR*)&serverData, sizeof(serverData)) >= 0;
+	data->active = ::connect(data->socketId, (SOCKADDR*)&serverData, sizeof(serverData)) >= 0;
 
 	data->lock.unlock();
 
 	return isActive();
 }
 
-void Socket::listen(int count)
+void Socket::listen(uint count)
 {
 	if (!isActive()) return;
 
 	data->lock.lock();
-	listenSocket(data->socketId, count);
+	::listen(data->socketId, count);
 	data->lock.unlock();
 }
 
-Socket Socket::accept()
+AcceptedClient Socket::accept()
 {
-	if (!isActive()) return Socket();
+	if (!isActive()) return AcceptedClient();
 
 	data->lock.lock();
-	SOCKET newSocketId = acceptSocket(data->socketId, NULL, NULL);
+	SOCKET newSocketId = ::accept(data->socketId, NULL, NULL);
 	data->lock.unlock();
 
 	if (newSocketId != INVALID_SOCKET)
 		setNonBlockSocket(newSocketId);
 
-	return Socket(newSocketId);
+	// Создание AcceptedClient
+	AcceptedClient ac;
+	ac.data->socketId = newSocketId;
+	ac.data->active = ac.isOpen();
+	return ac;
 }
 
-bool Socket::send(const char* buffer, unsigned int count)
+bool Socket::send(const char* buffer, uint count)
 {
-	if (!isActive()) return 0;
+	if (!isActive()) return false;
 
-	unsigned int sending = 0;
+	uint sending = 0;
 
 	data->lock.lock();
 
 	while (sending < count)
 	{
-		int result = sendSocket(data->socketId, buffer, min(count - sending, (unsigned int)SOCKET_CHANK_SIZE), 0);
+		int result = ::send(data->socketId, buffer, min(count - sending, (uint)SOCKET_CHANK_SIZE), 0);
 
 		if (result == 0)
 		{
@@ -322,17 +271,17 @@ bool Socket::send(const char* buffer, unsigned int count)
 	return true;
 }
 
-bool Socket::recv(char* buffer, unsigned int count)
+bool Socket::recv(char* buffer, uint count)
 {
-	if (!isActive()) return 0;
+	if (!isActive()) return false;
 
-	unsigned int reading = 0;
+	uint reading = 0;
 
 	data->lock.lock();
 
 	while (reading < count)
 	{
-		int result = recvSocket(data->socketId, buffer, min(count - reading, (unsigned int)SOCKET_CHANK_SIZE), 0);
+		int result = ::recv(data->socketId, buffer, min(count - reading, (uint)SOCKET_CHANK_SIZE), 0);
 
 		if (result == 0)
 		{
