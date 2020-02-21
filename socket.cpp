@@ -1,3 +1,11 @@
+/*
+ *  Project: CrossSocket
+ *  File: socket.cpp
+ *
+ *  Date: 17.05.2018
+ *  Author: Markovvn1
+ */
+
 #include "socket.hpp"
 
 #ifdef _WIN32

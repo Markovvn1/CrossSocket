@@ -1,3 +1,11 @@
+/*
+ *  Project: CrossSocket
+ *  File: socket.hpp
+ *
+ *  Date: 17.05.2018
+ *  Author: Markovvn1
+ */
+
 #pragma once
 
 #include <memory>

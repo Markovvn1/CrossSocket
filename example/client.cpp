@@ -1,3 +1,11 @@
+/*
+ *  Project: CrossSocket
+ *  File: example/client.cpp
+ *
+ *  Date: 11.08.2018
+ *  Author: Markovvn1
+ */
+
 #include <iostream>
 
 #include "../socket.hpp"
